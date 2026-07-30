@@ -63,8 +63,9 @@
   .vnum.na{color:var(--sub);font-weight:500}
   .vunit{font-size:11px;color:var(--sub)}
   .vfee{font-size:11px;color:var(--sub);margin-top:1px}
-  .gain{font-size:11.5px;font-weight:700}
-  .gain.up{color:#1a7a3a} .gain.dn{color:#b03030}
+  .vret{font-size:11.5px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .vret.up{color:#1a7a3a} .vret.dn{color:#b03030}
+  .vret b{font-weight:800}
 
   .note{padding:14px;font-size:12px;color:var(--sub);max-width:760px;margin:0 auto}
 
@@ -129,7 +130,7 @@
       <h3>2. 本ページの目的</h3>
       本ページは、会員への情報提供を目的として作成したものであり、特定の金融商品の勧誘・推奨や投資助言を目的とするものではありません。
       <h3>3. データの出典と計算方法</h3>
-      ウエルスアドバイザー株式会社「WEALTH ADVISOR」および投資信託協会「投信ライブラリー」の公表データをもとに作成しています。評価額は、毎月1万円を積み立てた場合の計算値（万円）です。データの基準日はページ上部に表示しています。
+      ウエルスアドバイザー株式会社「WEALTH ADVISOR」および投資信託協会「投信ライブラリー」の公表データをもとに作成しています。評価額は、毎月1万円を積み立てた場合の計算値（万円）です。「年率（複利）」は、その評価額に到達するための複利利回り（ExcelのRATE関数に相当）を年複利換算したもので、「累計」は投資額に対する期間全体の増減率です。年率は運用期間が短いほど大きく振れる点にご留意ください。データの基準日はページ上部に表示しています。
       <h3>4. 免責事項</h3>
       ・評価額は過去の運用実績にもとづく計算値です。過去の実績は将来の運用成果を保証するものではありません。<br>
       ・税金等は考慮していません。実際の受取額とは異なる場合があります。<br>
@@ -161,6 +162,8 @@
 <div class="list" id="list"></div>
 <div class="note">
   ※ 毎月1万円を積み立てた場合の評価額（万円）。「—」は運用期間が対象年数に満たないファンドです。<br>
+  ※ 「年率（複利）」は、その評価額になるための複利利回り（ExcelのRATE関数に相当）です。運用期間が短いほど数値は大きく振れます（特に1年）。<br>
+  ※ 「累計」は投資額に対する期間全体の増減率です。<br>
   ※ 本表示は閲覧専用です。<br>
   ※ 利用対象・出典・免責事項は<span class="tlink" onclick="showTerms()">利用規約</span>をご覧ください。
 </div>
@@ -171,7 +174,10 @@ const DATA = {"forche": {"title": "forche　運用商品一覧　WEALTH ADVISOR 
 const YEARS = [1,3,5,10,15,20];
 const INVEST = [12,36,60,120,180,240];   // 各年数の投資額（万円）
 
-let tab = localStorage.getItem("fs_tab") || "forche";
+// URLパラメータ ?plan=forche / sbi / ideco で1商品だけに固定（加入者向け）。無指定なら3種すべて表示
+const PLAN = new URLSearchParams(location.search).get("plan");
+const locked = ["forche","sbi","ideco"].includes(PLAN);
+let tab = locked ? PLAN : (localStorage.getItem("fs_tab") || "forche");
 let yi  = +(localStorage.getItem("fs_yi") ?? 3);   // 既定は10年
 let noOrder = false;
 
@@ -186,6 +192,16 @@ if(localStorage.getItem("fs_pw") === PASSCODE) document.getElementById("gate").s
 
 function fmt(n){ return n.toLocaleString("ja-JP",{minimumFractionDigits:n<1000?2:0, maximumFractionDigits:n<1000?2:0}); }
 
+// 積立の年率（複利）：毎月1万円をnper回積み立てて評価額fv（万円）になったときの
+// 複利利回り（Excelの RATE(nper,-1,0,fv) 相当の月利）を二分法で解き、年複利換算する
+function annualRate(fv, nper){
+  const f = r => (Math.abs(r)<1e-9) ? (nper - fv) : (((Math.pow(1+r,nper)-1)/r) - fv);
+  let lo=-0.3, hi=1.0;   // 月利の探索範囲
+  for(let i=0;i<100;i++){ const m=(lo+hi)/2; if(f(m)>0) hi=m; else lo=m; }
+  const r=(lo+hi)/2;
+  return Math.pow(1+r,12)-1;   // 年複利換算
+}
+
 const TABS = {forche:"forche", sbi:"いろどり年金", ideco:"SBI iDeCo"};
 const TITLES = {forche:"forche 運用商品一覧", sbi:"SBIいろどり年金 運用商品一覧", ideco:"SBI iDeCo 運用商品一覧"};
 
@@ -194,9 +210,15 @@ function render(){
   document.getElementById("ttl").textContent = TITLES[tab];
   document.getElementById("base").textContent = d.base;
 
-  // タブ
-  document.getElementById("tabs").innerHTML =
-    Object.keys(TABS).map(k=>`<div class="tab ${k===tab?"on":""}" onclick="setTab('${k}')">${TABS[k]}</div>`).join("");
+  // タブ（?plan指定時は1商品固定なのでタブを隠す）
+  const tabsEl = document.getElementById("tabs");
+  if(locked){
+    tabsEl.style.display = "none";
+  }else{
+    tabsEl.style.display = "flex";
+    tabsEl.innerHTML =
+      Object.keys(TABS).map(k=>`<div class="tab ${k===tab?"on":""}" onclick="setTab('${k}')">${TABS[k]}</div>`).join("");
+  }
 
   // 年数ボタン + NO順
   document.getElementById("years").innerHTML =
@@ -217,7 +239,11 @@ function render(){
   document.getElementById("metaL").innerHTML = noOrder
     ? `商品NO順（${funds.length}本）`
     : `<b>${YEARS[yi]}年</b> 積立ランキング（投資額 <b>${inv}万円</b>）`;
-  document.getElementById("metaR").textContent = `全${funds.length}本`;
+  const total = funds.length;
+  const valid = funds.filter(x=>x.v[yi]>0).length;
+  document.getElementById("metaR").textContent = noOrder
+    ? `全${total}本`
+    : `全${total}本（有効${valid}本）`;
 
   let html = "", r = 0;
   for(const f of funds){
@@ -227,7 +253,8 @@ function render(){
     const CROWN = '<svg viewBox="0 0 16 13" width="17" height="14"><path d="M1.2 2.6 L4.8 6 L8 1 L11.2 6 L14.8 2.6 L13.4 10.2 Q8 11.6 2.6 10.2 Z" fill="currentColor"/><rect x="2.9" y="11.2" width="10.2" height="1.6" rx="0.8" fill="currentColor"/></svg>';
     const crown = (!noOrder && has && r<=3) ? `<span class="crown c${r}">${CROWN}</span>` : "";
     const gainPct = has ? (v/inv-1)*100 : 0;
-    const gain = has ? `<span class="gain ${gainPct>=0?"up":"dn"}">${gainPct>=0?"+":""}${gainPct.toFixed(0)}%</span>` : "";
+    const yrPct = has ? annualRate(v, inv)*100 : 0;
+    const ret = has ? `<div class="vret ${gainPct>=0?"up":"dn"}">累計 ${gainPct>=0?"+":""}${gainPct.toFixed(0)}%（年複利 <b>${yrPct>=0?"+":""}${yrPct.toFixed(2)}%</b>）</div>` : "";
     const style = f.style ? `<span class="chip ${f.style.includes("アク")?"act":"pas"}">${f.style}</span>` : "";
     html += `<div class="row">
       <div class="rank">${crown}${rankTxt}</div>
@@ -237,7 +264,8 @@ function render(){
       </div>
       <div class="val">
         <div class="vnum ${has?"":"na"}">${has?fmt(v):"—"}<span class="vunit">${has?" 万円":""}</span></div>
-        <div class="vfee">${gain}${gain?"　":""}信託報酬 ${(f.fee*100).toFixed(3)}%</div>
+        <div class="vfee">信託報酬 ${(f.fee*100).toFixed(3)}%</div>
+        ${ret}
       </div>
     </div>`;
   }
