@@ -45,17 +45,17 @@
     display:flex;justify-content:space-between;align-items:baseline;gap:8px}
   .meta b{color:var(--ink)}
 
-  #freshbar{max-width:760px;margin:0 auto;padding:8px 14px 0;font-size:11.5px;
+  #freshbar{padding:8px 0 2px;font-size:11.5px;
     color:var(--sub);display:flex;align-items:center;gap:6px}
   #freshbar .dot{width:7px;height:7px;border-radius:50%;background:#1a7a3a;
     display:inline-block;flex-shrink:0}
   #freshbar.old .dot{background:var(--sub)}
-  #freshbar b{color:var(--ink);font-weight:700}
+  #freshbar .fblabel{font-weight:700;color:#1a7a3a}
+  #freshbar.old .fblabel{color:#9a6a00}
   #freshbar select{font-size:11.5px;padding:2px 6px;border:1px solid var(--line);
-    border-radius:6px;background:var(--card);color:var(--ink);margin-left:2px}
+    border-radius:6px;background:var(--card);color:var(--ink)}
   #freshbar .tolatest{font-size:11px;padding:3px 9px;border:none;border-radius:6px;
-    background:var(--accent);color:#fff;font-weight:700;cursor:pointer;margin-left:2px}
-  #freshbar.old{color:#9a6a00}
+    background:var(--accent);color:#fff;font-weight:700;cursor:pointer}
 
   .list{padding:4px 10px 40px;max-width:760px;margin:0 auto}
   .row{display:flex;align-items:center;flex-wrap:wrap;column-gap:10px;row-gap:0;background:var(--card);
@@ -163,13 +163,12 @@
 <header>
   <div class="ttl-row">
     <h1 id="ttl">運用商品ランキング</h1>
-    <div class="base"><span class="tlink head-tlink" onclick="showTerms()">利用規約</span>　<span id="base"></span></div>
+    <div class="base"><span class="tlink head-tlink" onclick="showTerms()">利用規約</span></div>
   </div>
+  <div id="freshbar"></div>
   <div class="tabs" id="tabs"></div>
   <div class="years" id="years"></div>
 </header>
-
-<div id="freshbar"></div>
 
 <div class="meta">
   <span id="metaL"></span><span id="metaR"></span>
@@ -251,10 +250,7 @@ const TITLES = {forche:"forche 運用商品一覧", sbi:"SBIいろどり年金 �
 function render(){
   const d = ARCHIVE[mi].data[tab];
   document.getElementById("ttl").textContent = TITLES[tab];
-  document.getElementById("base").textContent = d.base;
-
-  // ②③ 更新日の表示＋過去月の切替（開いた瞬間は常に最新 mi=0）
-  const updDate = (d.base.match(/\d{4}\/\d{2}\/\d{2}/) || [""])[0];
+  // ②③ 更新日＋過去月の切替（日付はトグル1か所に集約）
   const monthOpts = ARCHIVE.map(function(a,i){
     var dt=(a.data.forche.base.match(/\d{4}\/\d{2}\/\d{2}/)||[""])[0];
     return `<option value="${i}"${i===mi?" selected":""}>${dt}${i===0?"（最新）":""}</option>`;
@@ -262,11 +258,9 @@ function render(){
   const fb = document.getElementById("freshbar");
   fb.className = (mi===0) ? "" : "old";
   fb.innerHTML =
-    (mi===0
-      ? `<span class="dot"></span>最新版　データ更新日 <b>${updDate}</b>`
-      : `<span class="dot"></span>過去版　<b>${updDate}</b> 時点`)
-    + `　<select id="monthsel" onchange="setMonth(this.value)">${monthOpts}</select>`
-    + (mi===0 ? "" : ` <button class="tolatest" onclick="setMonth(0)">最新に戻る</button>`);
+    `<span class="dot"></span><span class="fblabel">${mi===0?"最新版":"過去版"}</span>`
+    + `<select id="monthsel" onchange="setMonth(this.value)">${monthOpts}</select>`
+    + (mi===0 ? "" : `<button class="tolatest" onclick="setMonth(0)">最新に戻る</button>`);
 
   // タブ（?plan指定時は1商品固定なのでタブを隠す）
   const tabsEl = document.getElementById("tabs");
