@@ -111,6 +111,20 @@
     border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
   .gateerr{color:#b03030;font-size:12.5px;min-height:18px;margin-bottom:4px}
   .gatenote{font-size:11.5px;color:var(--sub);margin-top:14px;line-height:1.6}
+  .gatebox button:disabled{opacity:.45;cursor:default}
+
+  /* 最新データがあります（1クッションの確認画面） */
+  #newdata{position:fixed;inset:0;background:var(--bg);z-index:150;
+    display:none;align-items:center;justify-content:center;padding:24px}
+  #newdata .gatebox{max-width:360px}
+  #newdata h2{font-size:16px}
+  #newdata #nddate{font-weight:700;color:var(--accent);margin-bottom:10px}
+  .ndchk{display:flex;align-items:center;justify-content:center;gap:8px;
+    font-size:13.5px;font-weight:700;color:var(--ink);margin:2px 0 12px;cursor:pointer}
+  .ndchk input{width:auto;margin:0;transform:scale(1.2)}
+  .ndskip{width:100%;padding:11px;margin-top:10px;font-size:13px;font-weight:600;
+    border:1px solid var(--line);border-radius:10px;background:var(--card);
+    color:var(--sub);cursor:pointer}
 
   .tlink{color:var(--accent);text-decoration:underline;cursor:pointer;white-space:nowrap}
   .head-tlink{font-size:12px}
@@ -143,6 +157,19 @@
     <button onclick="checkPw()">表示する</button>
     <div class="gatenote">ご利用の前に<span class="tlink" onclick="showTerms()">利用規約</span>をお読みください。<br>
     「表示する」を押して利用を開始した時点で、利用規約に同意いただいたものとみなします。</div>
+  </div>
+</div>
+
+<div id="newdata" style="display:none">
+  <div class="gatebox">
+    <h2>🆕 最新データがあります</h2>
+    <p id="nddate"></p>
+    <p style="text-align:left;line-height:1.7">最新データを表示する場合は、下の欄に合言葉をご入力ください。<br>合言葉を入れない場合は、最新データは表示できません（これまでのデータを表示します）。</p>
+    <input id="ndpw" type="text" inputmode="text" autocomplete="off" placeholder="合言葉">
+    <div class="gateerr" id="nderr"></div>
+    <label class="ndchk"><input type="checkbox" id="ndchk" onchange="ndToggle()">確認しました</label>
+    <button id="ndgo" onclick="ndProceed()" disabled>進&nbsp;む</button>
+    <button class="ndskip" onclick="ndSkip()">合言葉を入れずに、このまま表示する</button>
   </div>
 </div>
 
@@ -221,9 +248,17 @@ const YEARS = [1,3,5,10,15,20];
 const INVEST = [12,36,60,120,180,240];   // 各年数の投資額（万円）
 
 // アプリのバージョンと更新記録（毎月更新でマイナー+0.01、大きな機能追加でメジャー+1）
-const VERSION = "1.00";
+const VERSION = "1.10";
 const VERMONTH = "2026年8月";
+// データの版番号：データを更新してアップするたびに、必ず新しい番号にする（例＝アップ日 YYYYMMDD）。
+// この番号が変わると、利用者側は「最新データあり」を検知して自動更新／確認画面を出す。
+const DATA_VER = "20260823";
 const CHANGELOG = [
+  {ver:"1.10", date:"2026-08-23", items:[
+    "SBIいろどり年金の商品を最新ラインナップに更新（ターゲットイヤー型を「マイターゲット2030〜2070」＝野村・9本に差し替え）",
+    "最新データが公開されると、開くだけで自動的に最新へ更新（データ版番号方式）。iPhoneのホーム画面アプリを再表示したときも自動でチェックします",
+    "合言葉を更新した月は、お客様の前でも中断しないよう「最新データがあります」の確認画面を表示（合言葉を入れれば最新、入れなければこれまでのデータのまま閲覧できます）"
+  ]},
   {ver:"1.00", date:"2026-08-16", items:[
     "初版公開（データ基準日 2026年7月31日）",
     "積立ランキング／一括ランキングの切替に対応",
@@ -235,28 +270,67 @@ const CHANGELOG = [
   ]}
 ];
 
-// ① キャッシュ対策：開くだけで最新版になる仕組み（利用者の操作は不要）
-// 埋め込みデータの基準日を版数とし、サーバー上の最新HTMLの基準日と照合。
-// 古ければ ?v=最新日 を付けて読み込み直す（?plan= 等の既存パラメータは保持）
-const APP_VER = (ARCHIVE[0].data.forche.base.match(/\d{4}\/\d{2}\/\d{2}/) || [""])[0];
-(function(){
+// ① 自動更新：開くたびにサーバー上の最新データ版番号(DATA_VER)を確認する。
+//   新データがあれば → (a)合言葉が同じなら黙って最新へ／(b)合言葉が変わっていれば
+//   締め出さず「最新データがあります」の確認画面を出す／未開錠の人は最新版へ誘導。
+//   ?plan= 等の既存パラメータは保持。?v=版番号 で読み込み直してキャッシュを回避。
+function gotoVer(ver){
+  var u = new URL(location.href);
+  u.searchParams.set("v", ver);
+  location.replace(u.toString());
+}
+var _ndVer = "", _ndPass = "", _cushionBusy = false;
+function checkUpdate(){
   try{
+    if(_cushionBusy) return;                                              // 確認画面を出したら再表示しない（次回起動でリセット）
     fetch(location.pathname + "?_=" + Date.now(), {cache:"no-store"})
       .then(function(r){ return r.ok ? r.text() : Promise.reject(); })
       .then(function(html){
-        var m = html.match(/積立投資　(\d{4}\/\d{2}\/\d{2})　現在/);
-        var latest = m ? m[1] : "";
-        var vparam = latest.replace(/\//g,"");
-        var u = new URL(location.href);
-        // 実行中が旧版で、かつURLにまだ最新版数が付いていないときだけ再読込（ループ防止）
-        if(latest && latest !== APP_VER && u.searchParams.get("v") !== vparam){
-          u.searchParams.set("v", vparam);
-          location.replace(u.toString());
-        }
+        var mv = html.match(/DATA_VER\s*=\s*"([^"]+)"/);
+        var latestVer = mv ? mv[1] : "";
+        if(!latestVer || latestVer === DATA_VER) return;                 // 新データなし
+        if(new URL(location.href).searchParams.get("v") === latestVer) return; // ループ防止
+        var mp = html.match(/PASSCODE\s*=\s*"([^"]+)"/);
+        var latestPass = mp ? mp[1] : "";
+        var md = html.match(/積立投資　(\d{4}\/\d{2}\/\d{2})　現在/);
+        var latestDate = md ? md[1] : "";
+        var saved = localStorage.getItem("fs_pw");
+        var unlocked = (saved === normPw(PASSCODE));                      // この版を開錠済みか
+        if(!unlocked){ gotoVer(latestVer); return; }                     // 未開錠→最新版で合言葉を入力してもらう
+        if(normPw(latestPass) === saved){ gotoVer(latestVer); return; }  // 合言葉据え置き→静かに更新
+        _ndVer = latestVer; _ndPass = latestPass; _cushionBusy = true;   // 合言葉が変わった→確認画面
+        showCushion(latestDate);
       })
       .catch(function(){});
   }catch(e){}
-})();
+}
+// 「最新データがあります」確認画面（1クッション）
+function showCushion(dateStr){
+  document.getElementById("ndchk").checked = false;
+  document.getElementById("ndgo").disabled = true;
+  document.getElementById("ndpw").value = "";
+  document.getElementById("nderr").textContent = "";
+  document.getElementById("nddate").textContent = dateStr ? ("最新データ：" + dateStr + " 現在") : "";
+  document.getElementById("newdata").style.display = "flex";
+}
+function ndToggle(){ document.getElementById("ndgo").disabled = !document.getElementById("ndchk").checked; }
+function ndProceed(){
+  if(!document.getElementById("ndchk").checked) return;
+  var val = document.getElementById("ndpw").value;
+  if(normPw(val) === ""){ ndSkip(); return; }                            // 未入力→このまま古いデータ
+  if(normPw(val) === normPw(_ndPass)){                                    // 正しい→最新へ（新版では二度目の入力は不要）
+    localStorage.setItem("fs_pw", normPw(_ndPass));
+    gotoVer(_ndVer);
+  }else{
+    document.getElementById("nderr").textContent = "合言葉が違います。もう一度ご入力ください。";
+  }
+}
+function ndSkip(){ document.getElementById("newdata").style.display = "none"; }   // 古いデータのまま利用
+document.getElementById("ndpw").addEventListener("keydown", function(e){ if(e.key==="Enter") ndProceed(); });
+checkUpdate();
+// iPhoneのホーム画面アプリは「復帰」でページを読み込み直さないことがあるため、復帰時にも再チェック
+window.addEventListener("pageshow", function(e){ if(e.persisted) checkUpdate(); });
+document.addEventListener("visibilitychange", function(){ if(!document.hidden) checkUpdate(); });
 
 // URLパラメータ ?plan=forche / sbi / ideco で1商品だけに固定（加入者向け）。無指定なら3種すべて表示
 const PLAN = new URLSearchParams(location.search).get("plan");
