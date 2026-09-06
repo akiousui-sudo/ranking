@@ -396,8 +396,21 @@ function ndSkip(){ document.getElementById("newdata").style.display = "none"; } 
 document.getElementById("ndpw").addEventListener("keydown", function(e){ if(e.key==="Enter") ndProceed(); });
 checkUpdate();
 // iPhoneのホーム画面アプリは「復帰」でページを読み込み直さないことがあるため、復帰時にも再チェック
-window.addEventListener("pageshow", function(e){ if(e.persisted) checkUpdate(); });
-document.addEventListener("visibilitychange", function(){ if(!document.hidden) checkUpdate(); });
+// アプリの「再開」（ホーム画面アプリの復帰・タブ切替）では、ページが読み込み直されず
+// 起動時の判定が走らない。旧合言葉のままの人には確認画面を出し直す
+// （正しい合言葉を入れるまでは、開くたびに確認画面から始まるようにするため）
+function recheckAccess(){
+  try{
+    var saved = localStorage.getItem("fs_pw");
+    if(saved === normPw(PASSCODE)) return;                       // 現行の合言葉なら何もしない
+    if(passIndex(saved) !== 1) return;                           // 1世代前のときだけ（2世代以上前は既にゲート表示）
+    if(document.getElementById("newdata").style.display === "flex") return;   // すでに表示中
+    _ndPass = PASSCODE; _ndVer = "";
+    showCushion((ARCHIVE[0]||{}).date || "");
+  }catch(e){}
+}
+window.addEventListener("pageshow", function(e){ if(e.persisted){ checkUpdate(); recheckAccess(); } });
+document.addEventListener("visibilitychange", function(){ if(!document.hidden){ checkUpdate(); recheckAccess(); } });
 
 // URLパラメータ ?plan=forche / sbi / ideco で1商品だけに固定（加入者向け）。無指定ならトグルで選択
 const PLAN = new URLSearchParams(location.search).get("plan");
